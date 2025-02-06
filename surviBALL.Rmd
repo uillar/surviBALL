@@ -33,7 +33,7 @@ suppressPackageStartupMessages(library(glmnet))
 
 ## Data upload & filtering for min. expression in each cohort
 
-We will filter each cohort independently to take those lncRNAs minimally expressed in both cohorts. First we do it on NGS data:
+We will filter each cohort independently to take those lncRNAs minimally expressed in both cohorts. First we do it on C1 data:
 
 ```{r C1 prepare countData, message = FALSE, warning = FALSE}
 countData_C1 = data.frame(read_delim("inputs/countData_C1.txt"), row.names = 1) #99695 x 50
@@ -45,7 +45,7 @@ countData_C1 <- data.frame(countData_C1[, -c(52:57)], row.names = 1)
 countData_C1 = countData_C1[rowSums(countData_C1 >= 1) >= 3,] #From 95776 to 94073 genes
 ```
 
-We obtain as a result that 94073 genes are minimally expressed in NSG cohort. And now on C2 data:
+We obtain as a result that 94073 genes are minimally expressed in C1 cohort. And now on C2 data:
 
 ```{r C2 prepare countData, message = FALSE, warning = FALSE}
 countData_C2 = data.frame(read_delim("inputs/countData_C2.txt"), row.names = 1) #99695 x 72
@@ -57,7 +57,7 @@ countData_C2 = countData_C2[rowSums(countData_C2 >= 1) >= 3,] #From 95776 to 758
 
 Here, the minimally expressed genes are much less, as we find 75886 genes with at least one count in three samples.
 
-Now, we prepare the survival/clinical colData for each cohort. First for NGS:
+Now, we prepare the survival/clinical colData for each cohort. First for C1:
 
 ```{r C1 prepare colData, message = FALSE, warning = FALSE}
 colData_C1 <- data.frame(read_delim("inputs/colData_C1.txt"), row.names = 1)
@@ -81,7 +81,7 @@ print(identical(rownames(colData_C2),colnames(countData_C2)))
 
 #C1
 
-We correct the batch effect from different library preparation kits in C1 cohort:
+We correct the possible batch effect from different sequencing times in C1 cohort:
 
 ```{r comBat-seq C1, message = FALSE, warning = FALSE}
 countData_C1 <- ComBat_seq(as.matrix(countData_C1), batch=colData_C1$seqBatch, group=colData_C1$EFS)
@@ -127,7 +127,7 @@ ggplot(testData, aes(tSNE1, tSNE2, color=subtype, shape=EFS)) + geom_point(size=
 
 # C2
 
-Now we repeat the same for C2 cohort. In this case, the batch correction is done based on the read length for each sample. First group has less than 101 bp read, and the second one 101 bp reads.
+Now we repeat the same for C2 cohort. In this case, the batch correction is done based on the read length for each sample. First group has less than 75 bp read, and the second one 101 bp reads.
 
 ```{r comBat-seq C2, message = FALSE, warning = FALSE}
 countData_C2 <- ComBat_seq(as.matrix(countData_C2), batch=colData_C2$seqBatch, group=colData_C2$EFS)
@@ -243,8 +243,6 @@ ggtitle("Boxplot with global expression per cohort") +
 scale_fill_manual(values = c("#9857A4", "#53A054"), name = "cohort") +
 stat_pvalue_manual(stats, label = "p.adj.signif", tip.length = 0.01)  
 ```
-
-This result shows that C2 cohort's global expression is signifiC2tly higher than the NGS cohort's. No t exprected, as much more lncRNAs were filters with the minnimum expression criteria in C2 cohort...
 
 ```{r Global expression integrated relapse, message = FALSE, warning = FALSE}
 globalExpr = data.frame(apply(norm,2,sum))
