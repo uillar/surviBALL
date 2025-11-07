@@ -1,4 +1,4 @@
 # surviBALL
-surviBALL: 5-year event-free survival risk assessment in pediatric B-ALL based on lncRNA expression at diagnosis
+surviBALL: Exploring lncRNA Expression at Diagnosis for 5-Year EFS Risk Stratification in Pediatric B-ALL—A Proof of Concept
 
 This repository includes the necessary scripts to reproduce the analyses from "".
