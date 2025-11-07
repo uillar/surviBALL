@@ -392,39 +392,10 @@ coef(C1_CoxUV_ALASSO_cv, s = C1_CoxUV_ALASSO_cv$lambda.min)
 
 ```{r ALASSO C1 model development, message = FALSE, warning = FALSE}
 cox_C1_CoxUV_ALASSO_vars = c("lnckb.32044", "lnckb.61426", "lnckb.66409", "lnckb.83321", "lnckb.8576")
-surviBALL = coxph(Surv(eventTime, EFS) ~ lnckb.32044 + lnckb.61426 + lnckb.66409 + lnckb.83321 + lnckb.8576, data = norm_C1_CoxUV, x = T)
+surviBALL = coxph(Surv(eventTime, EFSb) ~ lnckb.32044 + lnckb.61426 + lnckb.66409 + lnckb.83321 + lnckb.8576, data = norm_C1_CoxUV, x = T)
 summary(surviBALL)
 round(cox.zph(surviBALL)$table, 2)
 ggforest(surviBALL)
-
-# Aproximación de R²
-concordancia <- survConcordance(Surv(eventTime, EFS) ~ predict(surviBALL))$concordance
-r2_aprox <- 2 * (concordancia - 0.5)
-r2_aprox
-
-#UV C1
-surviBALL_32044 = coxph(Surv(eventTime, EFSb) ~ lnckb.32044, data = Bizi_num_C1, x = T)
-summary(surviBALL_32044)
-surviBALL_61426 = coxph(Surv(eventTime, EFSb) ~ lnckb.61426, data = Bizi_num_C1, x = T)
-summary(surviBALL_61426)
-surviBALL_66409 = coxph(Surv(eventTime, EFSb) ~ lnckb.66409, data = Bizi_num_C1, x = T)
-summary(surviBALL_66409)
-surviBALL_83321 = coxph(Surv(eventTime, EFSb) ~ lnckb.83321, data = Bizi_num_C1, x = T)
-summary(surviBALL_83321)
-surviBALL_8576 = coxph(Surv(eventTime, EFSb) ~ lnckb.8576, data = Bizi_num_C1, x = T)
-summary(surviBALL_8576)
-
-#UV C2
-surviBALL_32044_C2 = coxph(Surv(eventTime, EFSb) ~ lnckb.32044, data = Bizi_num_C2, x = T)
-summary(surviBALL_32044_C2)
-surviBALL_61426_C2 = coxph(Surv(eventTime, EFSb) ~ lnckb.61426, data = Bizi_num_C2, x = T)
-summary(surviBALL_61426_C2)
-surviBALL_66409_C2 = coxph(Surv(eventTime, EFSb) ~ lnckb.66409, data = Bizi_num_C2, x = T)
-summary(surviBALL_66409_C2)
-surviBALL_83321_C2 = coxph(Surv(eventTime, EFSb) ~ lnckb.83321, data = Bizi_num_C2, x = T)
-summary(surviBALL_83321_C2)
-surviBALL_8576_C2 = coxph(Surv(eventTime, EFSb) ~ lnckb.8576, data = Bizi_num_C2, x = T)
-summary(surviBALL_8576_C2)
 
 #saveRDS(surviBALL, file = "surviBALL.rda")
 ```
@@ -1293,74 +1264,169 @@ ggplot(data, aes(fill = Biotype, y = Percentage, x = step)) +
     scale_y_continuous(labels = scales::percent_format())
 ```
 
-## CLINICAL VARIABLES C1 + C2, predVal
+## C1 + C2 clinical variables
 
-```{r Clinical risk comparison new C1}
-set.seed(12345)
+```{r C1 C2 cohort validation, message = F, warning = F}
+metaData_clinical <- data.frame(read_excel("Journals/Molecular and Cellular Pediatrics/Revision/Additional File 1_revised.xlsx", sheet = "Additional File 1.a", skip = 1), row.names = 1)
 
-# predRisk alone
-cox_covar = coxph(Surv(eventTime, EFSb) ~ predRisk, data = norm_CoxUV, x = T)
-summary(cox_covar)
+print(identical(rownames(metaData_clinical), colnames(norm)))
 
-# predRisk alone
-cox_covar = coxph(Surv(eventTime, EFSb) ~ predGr, data = norm_CoxUV, x = T)
-summary(cox_covar)
+norm_clin = cbind(metaData_clinical, t(norm))
 
-# Age
-cox_covar_age = coxph(Surv(eventTime, EFSb) ~ ageDiagnosis, data = norm_CoxUV, x = T)
-summary(cox_covar_age)
+#Predictions
+#surviBALL = readRDS("C:/Users/834733/Documents/EHU/Lab/ALL/Survival/Paper_bioinfo/surviBALL.rda")
+norm_clin$predRisk = predict(surviBALL, newdata = norm_clin)
+#Risk plot
+norm_clin <- norm_clin[order(norm_clin$predRisk), ]
+norm_clin$Order <- 1:nrow(norm_clin)
+ggplot(norm_clin, aes(x = Order, y = predRisk, color = as.character(EFS_5yrs))) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("1" = "#EE5C42", "0" = "#00EE76")) +
+  labs(x = "Ordered by Risk-score", y = "Risk-score", title = "TARGET surviBALL") +
+  theme_minimal()
+#KM
+quartiles <- quantile(norm_clin$predRisk, probs = c(0, 0.7, 0.9, 1))
+intervalos <- cut(norm_clin$predRisk, breaks = quartiles, labels = c("Low-risk", "Intermediate-risk", "High-risk"), include.lowest = T)
+norm_clin$predGr = as.factor(intervalos)
+norm_clin$eventTime_5yrs = as.numeric(as.character(norm_clin$eventTime_5yrs))
+norm_clin$EFS_5yrs = as.numeric(as.character(norm_clin$EFS_5yrs))
+fit <- survfit(Surv(eventTime_5yrs, EFS_5yrs) ~ predGr, data = norm_clin)
+#summary(fit)
+(log_rank_test <- survdiff(Surv(eventTime_5yrs, EFS_5yrs) ~ predGr, data = norm_clin))
+KM = ggsurvplot(fit,
+                pval = T,
+                conf.int = F,
+                risk.table = T,
+                surv.median.line = "hv",
+                xlab = "Time (days)",
+                title = "surviBALL predicted risk groups in TARGET",
+                palette = c("seagreen3", "cadetblue3", "firebrick2"),
+                size.ci = 1,
+                legend.title = "")
 
-# Age + predRisk
-cox_covar_age = coxph(Surv(eventTime, EFSb) ~ predRisk + ageDiagnosis, data = norm_CoxUV, x = T)
-summary(cox_covar_age)
+KM$plot <- KM$plot + theme(plot.title = element_text(size = 13, face = "bold", hjust = 0.4),
+  legend.text = element_text(size = 8),
+  axis.title.x = element_text(size = 10),
+  axis.title.y = element_text(size = 10),
+  axis.text.x = element_text(size = 9),
+  axis.text.y = element_text(size = 9))
 
-# Sex
-cox_covar_sex = coxph(Surv(eventTime, EFSb) ~ sex, data = norm_CoxUV, x = T)
-summary(cox_covar_sex)
+# Mostrar el gráfico
+print(KM)
+# Comparación entre grupos
+(pairwise_results <- pairwise_survdiff(Surv(eventTime_5yrs, EFS_5yrs) ~ predGr, data = norm_clin, p.adjust.method = "BH"))
 
-# Sex + predRisk
-cox_covar_sex = coxph(Surv(eventTime, EFSb) ~ predRisk + sex, data = norm_CoxUV, x = T)
-summary(cox_covar_sex)
+norm_clin$Subtype2 <- as.factor(as.character(norm_clin$subtype_def))
+norm_clin$Subtype2 <- relevel(norm_clin$Subtype2, ref = "HHD")
+table(norm_clin$Subtype2)
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "PAX5_P80R"] <- "Others"
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "IKZF1_N159Y"] <- "Others"
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "ZNF384r-like"] <- "Others"
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "ETV6::RUNX1-like"] <- "Others"
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "PAX5alt"] <- "Others"
+levels(norm_clin$Subtype2)[levels(norm_clin$Subtype2) == "TCF3::PBX1"] <- "Others"
 
-# subtype
-cox_covar_subtype = coxph(Surv(eventTime, EFSb) ~ predictedSubtype, data = norm_CoxUV, x = T)
-summary(cox_covar_subtype)
+TARGET_predVal = coxph(Surv(eventTime_5yrs, EFS_5yrs) ~ Subtype2, data = norm_clin, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
 
-# subtype + predGr
-table(norm_CoxUV$predictedSubtype)
-norm_CoxUV$Subtype_2 <- as.factor(norm_CoxUV$predictedSubtype)
-levels(norm_CoxUV$Subtype_2)[levels(norm_CoxUV$Subtype_2) == "IKZF1_N159Y"] <- "Others"
-levels(norm_CoxUV$Subtype_2)[levels(norm_CoxUV$Subtype_2) == "PAX5_P80R"] <- "Others"
-levels(norm_CoxUV$Subtype_2)[levels(norm_CoxUV$Subtype_2) == "TCF3-PBX1"] <- "Others"
-levels(norm_CoxUV$Subtype_2)[levels(norm_CoxUV$Subtype_2) == "PAX5alt"] <- "Others"
-table(norm_CoxUV$Subtype_2)
+TARGET_predVal = coxph(Surv(eventTime_5yrs, EFS_5yrs) ~ predRisk + Subtype2, data = norm_clin, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
 
-norm_CoxUV$Subtype_2 <- as.factor(norm_CoxUV$Subtype_2)
-norm_CoxUV$Subtype_2 <- relevel(norm_CoxUV$Subtype_2, ref = "HHD")
+TARGET_predVal = coxph(Surv(eventTime_5yrs, EFS_5yrs) ~ predGr, data = norm_clin, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
 
-cox_covar_subtype = coxph(Surv(eventTime, EFSb) ~ Subtype_2, data = norm_CoxUV, x = T)
-round(cox.zph(cox_covar_subtype)$table, 2)
-summary(cox_covar_subtype)
+TARGET_predVal = coxph(Surv(eventTime_5yrs, EFS_5yrs) ~ sex, data = norm_clin, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
 
-cox_covar_subtype = coxph(Surv(eventTime, EFSb) ~ predGr + Subtype_2, data = norm_CoxUV, x = T)
-round(cox.zph(cox_covar_subtype)$table, 2)
-summary(cox_covar_subtype)
 
-cox_covar_subtype = coxph(Surv(eventTime, EFSb) ~ predRisk + Subtype_2, data = norm_CoxUV, x = T)
-round(cox.zph(cox_covar_subtype)$table, 2)
-summary(cox_covar_subtype)
+# Boxplot con expresion por subtipos
+norm_surv_boxplots = cbind(metaData_TARGET, t(norm_T))
+norm_surv_boxplots$Subtype3 <- as.factor(as.character(norm_surv_boxplots$subtype_def))
+norm_surv_boxplots$Subtype3 <- relevel(norm_surv_boxplots$Subtype3, ref = "HHD")
 
-# subtype 2
-cox_covar_subtype = coxph(Surv(eventTime, EFSb) ~ Subtype_2, data = norm_CoxUV, x = T)
-summary(cox_covar_subtype)
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "PAX5_P80R"] <- "Others"
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "ZNF384r-like"] <- "Others"
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "DUX4r"] <- "Others"
 
-# All variables
-cox_covar_all = coxph(Surv(eventTime, EFSb) ~ predictedSubtype + sex + ageDiagnosis, data = norm_CoxUV, x = T)
-summary(cox_covar_all)
+# global difs
+kruskal.test(lnckb.8576 ~ Subtype2, data = norm_clin)
+pw12_8576 <- pairwise.wilcox.test(norm_clin$lnckb.8576,
+                     norm_clin$Subtype2,
+                     p.adjust.method = "bonferroni")$p.value
+ggplot(norm_clin, aes(x = Subtype2, y = lnckb.8576)) +
+  geom_boxplot(aes(fill=as.factor(Subtype2))) +
+  theme_bw() +
+  ylab("lnckb.8576 expression") +
+  xlab("Subtypes") +
+  ggtitle("Boxplot with lncRNA expression per subtype") +
+  scale_fill_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E"), name = "Subtypes")
 
-# All variables + predRisk
-cox_covar_all = coxph(Surv(eventTime, EFSb) ~ predRisk + predictedSubtype + sex + ageDiagnosis, data = norm_CoxUV, x = T)
-summary(cox_covar_all)
+kruskal.test(lnckb.32044 ~ Subtype2, data = norm_clin)
+pw12_32044 <- pairwise.wilcox.test(norm_clin$lnckb.32044,
+                     norm_clin$Subtype2,
+                     p.adjust.method = "bonferroni")$p.value
+ggplot(norm_clin, aes(x = Subtype2, y = lnckb.32044)) +
+  geom_boxplot(aes(fill=as.factor(Subtype2))) +
+  theme_bw() +
+  ylab("lnckb.32044 expression") +
+  xlab("Subtypes") +
+  ggtitle("Boxplot with lncRNA expression per subtype") +
+  scale_fill_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E"), name = "Subtypes")
+
+kruskal.test(lnckb.61426 ~ Subtype2, data = norm_clin)
+pw12_61426 <- pairwise.wilcox.test(norm_clin$lnckb.61426,
+                     norm_clin$Subtype2,
+                     p.adjust.method = "bonferroni")$p.value
+
+kruskal.test(lnckb.66409 ~ Subtype2, data = norm_clin)
+pw12_66409 <- pairwise.wilcox.test(norm_clin$lnckb.66409,
+                     norm_clin$Subtype2,
+                     p.adjust.method = "bonferroni")$p.value
+
+kruskal.test(lnckb.83321 ~ Subtype2, data = norm_clin)
+pw12_83321 <- pairwise.wilcox.test(norm_clin$lnckb.83321,
+                     norm_clin$Subtype2,
+                     p.adjust.method = "bonferroni")$p.value
+
+
+
+ggplot(norm_clin, aes(x = Subtype2, y = lnckb.66409)) +
+  geom_boxplot(aes(fill=as.factor(Subtype2))) +
+  theme_bw() +
+  ylab("lnckb.66409 expression") +
+  xlab("Subtypes") +
+  ggtitle("Boxplot with lncRNA expression per subtype") +
+  scale_fill_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E"), name = "Subtypes")
+
+ggplot(norm_clin, aes(x = Subtype2, y = lnckb.61426)) +
+  geom_boxplot(aes(fill=as.factor(Subtype2))) +
+  theme_bw() +
+  ylab("lnckb.61426 expression") +
+  xlab("Subtypes") +
+  ggtitle("Boxplot with lncRNA expression per subtype") +
+  scale_fill_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E"), name = "Subtypes")
+
+ggplot(norm_clin, aes(x = Subtype2, y = lnckb.8576)) +
+  geom_boxplot(aes(fill=as.factor(Subtype2))) +
+  theme_bw() +
+  ylab("lnckb.83321 expression") +
+  xlab("Subtypes") +
+  ggtitle("Boxplot with lncRNA expression per subtype") +
+  scale_fill_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E"), name = "Subtypes")
+
+dunn_85_12 <- norm_clin %>% dunn_test(lnckb.8576 ~ Subtype2, p.adjust.method = "bonferroni")
+dunn_32_12 <- norm_clin %>% dunn_test(lnckb.32044 ~ Subtype2, p.adjust.method = "bonferroni")
+dunn_61_12 <- norm_clin %>% dunn_test(lnckb.61426 ~ Subtype2, p.adjust.method = "bonferroni")
+dunn_66_12 <- norm_clin %>% dunn_test(lnckb.66409 ~ Subtype2, p.adjust.method = "bonferroni")
+dunn_83_12 <- norm_clin %>% dunn_test(lnckb.83321 ~ Subtype2, p.adjust.method = "bonferroni")
 ```
 
 ## TARGET cohort validation
@@ -1368,7 +1434,10 @@ summary(cox_covar_all)
 ```{r TARGET cohort validation, message = F, warning = F}
 #Inputs and prepare metaData
 countData_TARGET = data.frame(read_delim("TARGET_surviBALL/lncRNAKB_counts.txt"), row.names = 1)
-metaData_TARGET <- data.frame(read_excel("Journals/Translational Research/Appendix A.xlsx", sheet = "Appendix A.2", skip = 1), row.names = 7)
+#metaData_TARGET <- data.frame(read_excel("Journals/Translational Research/Appendix A.xlsx", sheet = "Appendix A.2", skip = 1), row.names = 7)
+
+#revision
+metaData_TARGET <- data.frame(read_excel("Journals/Molecular and Cellular Pediatrics/Revision/Additional File 1_revised.xlsx", sheet = "Additional File 1.b", skip = 1), row.names = 8)
 
 countData_TARGET <- countData_TARGET[,rownames(metaData_TARGET)]
 countData_TARGET <- merge(countData_TARGET, lncRNAKB_annot, by = c(0))
@@ -1386,12 +1455,18 @@ dds_T <- DESeq(dds_T)
 norm_T = data.frame(counts(dds_T, normalized = T))
 scaled_T <- data.frame(scale(norm_T))
 
+norm_surv_original <- norm_surv
+
 norm_surv = cbind(metaData_TARGET, t(scaled_T))
 
 #Predictions
 #surviBALL = readRDS("C:/Users/834733/Documents/EHU/Lab/ALL/Survival/Paper_bioinfo/surviBALL.rda")
 norm_surv$predRisk = predict(surviBALL, newdata = norm_surv)
 norm_surv$EFS_Status <- as.numeric(norm_surv$EFS_Status)
+
+norm_surv$Subtype2 <- as.factor(as.character(norm_surv$Subtype2))
+levels(norm_surv$Subtype2)[levels(norm_surv$Subtype2) == "PAX5_P80R"] <- "Others"
+
 norm_surv$Subtype <- as.factor(as.character(norm_surv$Subtype))
 norm_surv$Subtype <- relevel(norm_surv$Subtype, ref = "Hyperdiploidy")
 
@@ -1408,9 +1483,10 @@ TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Sex, data = norm_surv, x = T
 round(cox.zph(TARGET_predVal)$table, 2)
 summary(TARGET_predVal)
 
-TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Subtype, data = norm_surv, x = T)
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Subtype2, data = norm_surv, x = T)
 round(cox.zph(TARGET_predVal)$table, 2)
 summary(TARGET_predVal)
+ggforest(TARGET_predVal)
 
 TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv, x = T)
 round(cox.zph(TARGET_predVal)$table, 2)
@@ -1420,12 +1496,30 @@ TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predRisk, data = norm_surv, 
 round(cox.zph(TARGET_predVal)$table, 2)
 summary(TARGET_predVal)
 
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ MRD_.29_Status_0.01., data = norm_surv, x = T)
+round(cox.zph(TARGET_predVal)$table, 2)
+summary(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ MRD_.29, data = norm_surv, x = T)
+round(cox.zph(TARGET_predVal)$table, 2)
+summary(TARGET_predVal)
+
 TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predRisk + Subtype, data = norm_surv, x = T)
 summary(TARGET_predVal)
 round(cox.zph(TARGET_predVal)$table, 2)
 ggforest(TARGET_predVal)
 
 TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr + Subtype, data = norm_surv, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table, 2)
+ggforest(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ MRD_.29_Status_0.01. + Subtype, data = norm_surv, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table, 2)
+ggforest(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr + Subtype + MRD_.29_Status_0.01., data = norm_surv, x = T)
 summary(TARGET_predVal)
 round(cox.zph(TARGET_predVal)$table, 2)
 ggforest(TARGET_predVal)
@@ -1450,40 +1544,6 @@ summary(fit)
 KM = ggsurvplot(fit,
                 pval = T,
                 conf.int = F,
-                risk.table = T,
-                surv.median.line = "hv",
-                xlab = "Time (days)",
-                title = "surviBALL predicted risk groups in TARGET",
-                palette = c("seagreen3", "cadetblue3", "firebrick2"),
-                size.ci = 1,
-                legend.title = "")
-
-KM$plot <- KM$plot + theme(plot.title = element_text(size = 13, face = "bold", hjust = 0.4),
-  legend.text = element_text(size = 8),
-  axis.title.x = element_text(size = 10),
-  axis.title.y = element_text(size = 10),
-  axis.text.x = element_text(size = 9),
-  axis.text.y = element_text(size = 9))
-
-# Mostrar el gráfico
-print(KM)
-# Comparación entre grupos
-(pairwise_results <- pairwise_survdiff(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv, p.adjust.method = "BH"))
-
-
-# Two groups
-#KM
-quartiles <- quantile(norm_surv$predRisk, probs = c(0, 0.7, 1))
-intervalos <- cut(norm_surv$predRisk, breaks = quartiles, labels = c("Low-risk", "High-risk"), include.lowest = T)
-norm_surv$predGr = as.factor(intervalos)
-norm_surv$EFS_Time = as.numeric(as.character(norm_surv$EFS_Time))
-norm_surv$EFS_Status = as.numeric(as.character(norm_surv$EFS_Status))
-fit <- survfit(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv)
-#summary(fit)
-(log_rank_test <- survdiff(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv))
-KM = ggsurvplot(fit,
-                pval = T,
-                conf.int = T,
                 risk.table = T,
                 surv.median.line = "hv",
                 xlab = "Time (days)",
@@ -1575,5 +1635,184 @@ ggplot(Bubbles, aes(x = order, y = `-log(q-value)`)) +
        y = "-log(q-value)",
        color = "lncRNA in surviBALL",
        size = "Genes in pathway")
+
+sig_terms <- c("leukocyte activation involved in immune response", "leukocyte degranulation", "response to chemical", "FOXO-mediated transcription")
+
+ggplot(Bubbles, aes(x = order, y = `-log(q-value)`)) + 
+  geom_point(aes(color = lncRNA, size = size), alpha = 0.3) +
+  geom_hline(yintercept = 1.3, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  labs(title = "ORA result as bubbles plot",
+       caption = "Source: consensusPath (http://cpdb.molgen.mpg.de/)",
+       x = "lncRNAs and pathways",
+       y = "-log(q-value)",
+       color = "lncRNA in surviBALL",
+       size = "Genes in pathway") +
+  geom_label_repel(
+    data = subset(Bubbles, term_name %in% sig_terms & `-log(q-value)` > 1.3),
+    aes(label = term_name),
+    size = 3,
+    nudge_y = 1,   # desplaza el texto un poco hacia arriba
+    arrow = arrow(length = unit(0.015, "npc")),  # dibuja flecha
+    box.padding = 0.5
+  )
 ```
 
+## TARGET cohort validation revision
+
+```{r TARGET cohort validation rev, message = F, warning = F}
+metaData_TARGET <- data.frame(read_excel("Journals/Molecular and Cellular Pediatrics/Revision/Additional File 1_revised.xlsx", sheet = "Additional File 1.b", skip = 1), row.names = 8)
+
+#countData_TARGET <- countData_TARGET[,rownames(metaData_TARGET)]
+#countData_TARGET <- merge(countData_TARGET, lncRNAKB_annot, by = c(0))
+#countData_TARGET = subset(countData_TARGET, !grepl("_", chr)) #From 99695 to 95776 genes
+#countData_TARGET <- data.frame(countData_TARGET[, -c(179:184)], row.names = 1)
+#countData_TARGET = countData_TARGET[rowSums(countData_TARGET >= 1) >= 3,] #From 95776 to 93711 genes
+#order = sort(colnames(countData_TARGET))
+metaData_TARGET <- metaData_TARGET[order, ]
+countData_TARGET <- countData_TARGET[, order]
+print(identical(rownames(metaData_TARGET), colnames(countData_TARGET)))
+
+#DESeq
+#dds_T <- DESeqDataSetFromMatrix(countData = countData_TARGET, colData = metaData_TARGET, design = ~1)
+#dds_T <- DESeq(dds_T)
+#norm_T = data.frame(counts(dds_T, normalized = T))
+#scaled_T <- data.frame(scale(norm_T))
+
+norm_surv = cbind(metaData_TARGET, t(scaled_T))
+
+
+#Predictions
+#surviBALL = readRDS("C:/Users/834733/Documents/EHU/Lab/ALL/Survival/Paper_bioinfo/surviBALL.rda")
+norm_surv$predRisk = predict(surviBALL, newdata = norm_surv)
+#Risk plot
+norm_surv <- norm_surv[order(norm_surv$predRisk), ]
+norm_surv$Order <- 1:nrow(norm_surv)
+ggplot(norm_surv, aes(x = Order, y = predRisk, color = as.character(EFS_Status))) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("1" = "#EE5C42", "0" = "#00EE76")) +
+  labs(x = "Ordered by Risk-score", y = "Risk-score", title = "TARGET surviBALL") +
+  theme_minimal()
+#KM
+quartiles <- quantile(norm_surv$predRisk, probs = c(0, 0.7, 0.9, 1))
+intervalos <- cut(norm_surv$predRisk, breaks = quartiles, labels = c("Low-risk", "Intermediate-risk", "High-risk"), include.lowest = T)
+norm_surv$predGr = as.factor(intervalos)
+norm_surv$EFS_Time = as.numeric(as.character(norm_surv$EFS_Time))
+norm_surv$EFS_Status = as.numeric(as.character(norm_surv$EFS_Status))
+fit <- survfit(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv)
+#summary(fit)
+(log_rank_test <- survdiff(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv))
+KM = ggsurvplot(fit,
+                pval = T,
+                conf.int = F,
+                risk.table = T,
+                surv.median.line = "hv",
+                xlab = "Time (days)",
+                title = "surviBALL predicted risk groups in TARGET",
+                palette = c("seagreen3", "cadetblue3", "firebrick2"),
+                size.ci = 1,
+                legend.title = "")
+
+KM$plot <- KM$plot + theme(plot.title = element_text(size = 13, face = "bold", hjust = 0.4),
+  legend.text = element_text(size = 8),
+  axis.title.x = element_text(size = 10),
+  axis.title.y = element_text(size = 10),
+  axis.text.x = element_text(size = 9),
+  axis.text.y = element_text(size = 9))
+
+# Mostrar el gráfico
+print(KM)
+# Comparación entre grupos
+(pairwise_results <- pairwise_survdiff(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv, p.adjust.method = "BH"))
+
+
+norm_surv$Subtype <- as.factor(as.character(norm_surv$Subtype))
+norm_surv$Subtype <- relevel(norm_surv$Subtype, ref = "HHD")
+
+levels(norm_surv$Subtype)[levels(norm_surv$Subtype) == "PAX5_P80R"] <- "Others"
+levels(norm_surv$Subtype)[levels(norm_surv$Subtype) == "DUX4r"] <- "Others"
+levels(norm_surv$Subtype)[levels(norm_surv$Subtype) == "ZNF384r-like"] <- "Others"
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Subtype, data = norm_surv, x = T)
+summary(TARGET_predVal)
+ggforest(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Age, data = norm_surv, x = T)
+summary(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ Sex, data = norm_surv, x = T)
+summary(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr, data = norm_surv, x = T)
+summary(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predRisk, data = norm_surv, x = T)
+summary(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ MRD_.29_Status_0.01., data = norm_surv, x = T)
+summary(TARGET_predVal)
+
+
+# Multivar.
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr + Subtype, data = norm_surv, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ MRD_.29_Status_0.01. + Subtype, data = norm_surv, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 2)
+ggforest(TARGET_predVal)
+
+TARGET_predVal = coxph(Surv(EFS_Time, EFS_Status) ~ predGr + Subtype + MRD_.29_Status_0.01., data = norm_surv, x = T)
+summary(TARGET_predVal)
+round(cox.zph(TARGET_predVal)$table["GLOBAL",], 3)
+ggforest(TARGET_predVal)
+
+# Boxplot con expresion por subtipos
+norm_surv_boxplots = cbind(metaData_TARGET, t(norm_T))
+norm_surv_boxplots$Subtype3 <- as.factor(as.character(norm_surv_boxplots$subtype_def))
+norm_surv_boxplots$Subtype3 <- relevel(norm_surv_boxplots$Subtype3, ref = "HHD")
+
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "PAX5_P80R"] <- "Others"
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "ZNF384r-like"] <- "Others"
+levels(norm_surv_boxplots$Subtype3)[levels(norm_surv_boxplots$Subtype3) == "DUX4r"] <- "Others"
+
+dunn_85 <- norm_surv_boxplots %>% dunn_test(lnckb.8576 ~ Subtype3, p.adjust.method = "bonferroni")
+dunn_32 <- norm_surv_boxplots %>% dunn_test(lnckb.32044 ~ Subtype3, p.adjust.method = "bonferroni")
+dunn_61 <- norm_surv_boxplots %>% dunn_test(lnckb.61426 ~ Subtype3, p.adjust.method = "bonferroni")
+dunn_66 <- norm_surv_boxplots %>% dunn_test(lnckb.66409 ~ Subtype3, p.adjust.method = "bonferroni")
+dunn_83 <- norm_surv_boxplots %>% dunn_test(lnckb.83321 ~ Subtype3, p.adjust.method = "bonferroni")
+
+ggplot(norm_surv_boxplots, aes(x = Subtype3, y = lnckb.32044, color = as.factor(Subtype3))) +
+  geom_jitter(width = 0.2, alpha = 1, size = 2) +
+  stat_summary(fun = median, geom = "crossbar", 
+               width = 0.5, fatten = 2, color = "black") +
+  stat_summary(fun.data = function(y) {
+    r <- quantile(y, probs = c(0.25, 0.75))
+    data.frame(y = r, ymin = r[1], ymax = r[2])
+  }, geom = "errorbar", width = 0.3, color = "black") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  ylab("lnckb.32044 expression") +
+  xlab("Subtypes") +
+  ggtitle("lnckb.32044 expression per subtype") +
+  scale_color_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E", "#5A9E91", "#B589D6", "#3D6D94", "#C4C45A"), name = "Subtypes")
+
+ggplot(norm_surv_boxplots, aes(x = Subtype3, y = lnckb.8576, color = as.factor(Subtype3))) +
+  geom_jitter(width = 0.2, alpha = 1, size = 2) +
+  stat_summary(fun = median, geom = "crossbar", 
+               width = 0.5, fatten = 2, color = "black") +
+  stat_summary(fun.data = function(y) {
+    r <- quantile(y, probs = c(0.25, 0.75))
+    data.frame(y = r, ymin = r[1], ymax = r[2])
+  }, geom = "errorbar", width = 0.3, color = "black") +
+  theme_bw() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  ylab("lnckb.8576 expression") +
+  xlab("Subtypes") +
+  ggtitle("lnckb.8576 expression per subtype") +
+  scale_color_manual(values = c("#9857A4", "#53A054", "#C26060", "#E0A840", "#4C88C2", "#D970C2", "#69C2B0", "#737373", "#F2855E", "#5A9E91", "#B589D6", "#3D6D94", "#C4C45A"), name = "Subtypes")
+
+```
